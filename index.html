@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FIFA 16 Team Roster Exporter</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; padding: 20px; }
+        .container { background: white; max-width: 1000px; margin: 0 auto; padding: 25px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { color: #2c3e50; border-bottom: 2px solid #27ae60; padding-bottom: 10px; }
+        .step { background: #e8f6f3; padding: 15px; margin-bottom: 20px; border-radius: 5px; border: 1px solid #aed6f1; }
+        label { display: block; margin-top: 10px; font-weight: bold; color: #333; }
+        input[type="file"], input[type="number"], input[type="text"], select { display: block; margin-top: 5px; width: 100%; box-sizing: border-box; padding: 8px; }
+        button { width: 100%; background-color: #27ae60; color: white; padding: 12px; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; margin-top: 15px; }
+        button:hover { background-color: #219150; }
+        .log { background: #2c3e50; color: #ecf0f1; padding: 15px; border-radius: 5px; margin-top: 15px; font-family: monospace; font-size: 12px; max-height: 350px; overflow-y: auto; }
+        .success { color: #2ecc71; font-weight: bold; }
+        .warning { color: #f1c40f; font-weight: bold; }
+        textarea { width: 100%; height: 300px; margin-top: 15px; box-sizing: border-box; padding: 10px; font-family: monospace; }
+
+        /* Search Bar Styling */
+        .search-container { display: flex; gap: 10px; margin-bottom: 20px; }
+        input[type="text"] { padding: 12px; border-radius: 5px; border: 1px solid #ddd; width: 70%; outline: none; }
+        button { background-color: #3498db; color: white; padding: 12px 20px; border: none; border-radius: 5px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+        button:hover { background-color: #2980b9; }
+        button:disabled { background-color: #bdc3c7; cursor: not-allowed; }
+        
+        /* Result Card Styling */
+        .result-card { display: none; margin-top: 20px; border-top: 1px solid #eee; padding-top: 20px; }
+        .player-row { display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #f9f9fa; }
+        .label { font-weight: bold; color: #555; width: 150px; }
+        .value { color: #333; }
+        .status { padding: 4px 8px; border-radius: 4px; font-size: 0.9em; font-weight: bold; }
+        .status.current { background-color: #d1f2eb; color: #fff; }
+        .status.former { background-color: #7f8c8d; color: #fff; }
+        .status.unknown { background-color: #bdc3c7; color: #fff; }
+
+        /* Log */
+        .log { background: #2c3e50; color: #ecf0f1; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 13px; max-height: 200px; overflow-y: auto; margin-top: 20px; }
+        .error { color: #e74c3c; }
+
+        /* Table Styling */
+        .team-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .team-table th, .team-table td { text-align: left; padding: 10px; border-bottom: 1px solid #ddd; }
+        .team-table th { background-color: #f4f6f7; font-weight: bold; }
+        .team-table tr:hover { background-color: #f9f9fa; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>FIFA 16 Team Roster Exporter</h1>
+    <p><strong>Safe Read-Only Tool:</strong> Extracts the current squad list for a specific team from your database files. Useful for auditing or manual updates.</p>
+
+    <div class="step">
+        <h2>Step 1: Upload Database Files</h2>
+        <p>We need 3 files to reconstruct the names.</p>
+        
+        <label>1. players.json (Player IDs & Stats)</label>
+        <input type="file" id="filePlayers" accept=".json">
+
+        <label>2. playernames.json (Player Names)</label>
+        <input type="file" id="fileNames" accept=".json">
+
+        <label>3. teamplayerlinks.json (Team Assignments)</label>
+        <input type="file" id="fileLinks" accept=".json,.txt">
+    </div>
+
+    <div class="step">
+        <h2>Step 2: Select Team</h2>
+        
+        <label>Target Team ID (e.g., 243 for Real Madrid):</label>
+        <input type="number" id="targetTeamId" placeholder="Enter Team ID...">
+    </div>
+
+    <button onclick="generateRoster()">Generate Roster List</button>
+    
+    <div class="step">
+        <h2>Step 3: Results</h2>
+        <p>Below is the list of players currently assigned to this team in your database.</p>
+        <textarea id="resultOutput" readonly></textarea>
+        <button onclick="downloadResults()">Download List (.txt)</button>
+    </div>
+
+    <div id="log" class="log">Waiting...</div>
+</div>
+    <div class="container">
+        <h1>FIFA 16 Current Team Checker</h1>
+        <p style="text-align:center; color:#666;">Check if a player is currently in a specific team (Real Madrid, Liverpool, etc.) via TheSportsDB API.</p>
+
+        <div class="search-container">
+            <input type="text" id="playerSearch" placeholder="Enter Player Name (e.g., Jude Bellingham)" autocomplete="off">
+            <button onclick="searchPlayer()" id="btnSearch">Check Current Team</button>
+        </div>
+
+        <!-- Result Display -->
+        <div class="result-card" id="resultCard">
+            <h3 style="text-align:center; color:#888; margin-bottom:15px;">Waiting for search...</h3>
+
+            <div class="player-row">
+                <div class="label">Player Name:</div>
+                <div class="value" id="resName">-</div>
+            </div>
+
+            <div class="player-row">
+                <div class="label">Current Team (API):</div>
+                <div class="value" id="resTeam">-</div>
+            </div>
+
+            <div class="player-row">
+                <div class="label">Status:</div>
+                <div id="resBadge" class="status"></div>
+            </div>
+
+            <div class="player-row">
+                <div class="label">Date of Birth:</div>
+                <div class="value" id="resDob">-</div>
+            </div>
+        </div>
+
+        <div id="log" class="log"></div>
+    </div>
+
+    <div class="container">
+    <h1>FIFA 16 Simple Team List (Numeric Sort)</h1>
+    <p><strong>Purpose:</strong> Extracts all Teams from your <b>teams.json</b> file. Sorts by <b>Team ID (Ascending 1, 2, 3...)</b>.</p>
+
+    <div class="step">
+        <h2>Step 1: Upload Database</h2>
+        
+        <p>Select your <strong>teams.json</strong> file.</p>
+        <input type="file" id="fileInput" accept=".json">
+    </div>
+
+    <div class="step">
+        <h2>Step 2: Settings</h2>
+        
+        <label>Sort By:</label>
+        <select id="sortOrder">
+            <option value="id_asc">Team ID (Ascending 1, 2, 3...)</option>
+            <option value="name">Team Name (Alphabetical)</option>
+        </select>
+    </div>
+
+    <button onclick="generateList()">Generate List</button>
+    <div id="log" class="log">Waiting...</div>
+</div>
+
+<!-- RESULTS TABLE -->
+<table class="team-table" id="resultsTable" style="display:none;">
+    <thead>
+        <tr>
+            <th>Team ID</th>
+            <th>Team Name</th>
+        </tr>
+    </thead>
+    <tbody id="tableBody">
+        <!-- Rows go here -->
+    </tbody>
+</table>
+<script>
+    let globalPlayersData = [];
+    let globalNameMap = new Map();
+    let globalLinksData = [];
+
+    function normalize(str) {
+        if(!str) return "";
+        return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    }
+
+    function getNameString(player) {
+        const first = normalize(globalNameMap.get(player.firstnameid));
+        const last = normalize(globalNameMap.get(player.lastnameid));
+        const common = normalize(globalNameMap.get(player.commonnameid));
+        
+        if (common) return common;
+        return `${first} ${last}`.trim();
+    }
+
+    // --- MAIN LOGIC ---
+    async function generateRoster() {
+        const fileP = document.getElementById('filePlayers').files[0];
+        const fileN = document.getElementById('fileNames').files[0];
+        const fileL = document.getElementById('fileLinks').files[0];
+        const teamId = document.getElementById('targetTeamId').value;
+        const log = document.getElementById('log');
+        const outputArea = document.getElementById('resultOutput');
+
+        if (!fileP || !fileN || !fileL || !teamId) {
+            log.innerHTML = "<span class='warning'>Please upload all 3 files and enter Team ID.</span>";
+            return;
+        }
+
+        log.innerHTML = "Reading files and matching names...";
+
+        try {
+            // 1. LOAD DATA
+            const playersData = JSON.parse(await readFile(fileP));
+            const namesData = JSON.parse(await readFile(fileN));
+            const linksData = JSON.parse(await readFile(fileL));
+
+            // 2. BUILD MAPS
+            globalNameMap = new Map();
+            namesData.forEach(n => {
+                if (n.nameid && n.name) globalNameMap.set(n.nameid, n.name);
+            });
+            
+            globalPlayersData = new Map();
+            playersData.forEach(p => {
+                globalPlayersData.set(p.playerid, p);
+            });
+
+            // 3. FILTER LINKS
+            const targetLinks = linksData.filter(l => l.teamid == teamId);
+
+            if (targetLinks.length === 0) {
+                throw new Error(`No players found linked to Team ID ${teamId}. Check the ID.`);
+            }
+
+            log.innerHTML = `<span class='success'>Found ${targetLinks.length} players in Team ID ${teamId}.</span>`;
+
+            // 4. GENERATE LIST
+            let outputLines = [];
+            outputLines.push("Player Name (Player ID)");
+            
+            targetLinks.sort((a,b) => {
+                const nameA = getNameString(a);
+                const nameB = getNameString(b);
+                return nameA.localeCompare(nameB);
+            });
+
+            for (let link of targetLinks) {
+                const player = globalPlayersData.get(link.playerid);
+                
+                if (player) {
+                    const fullName = getNameString(player);
+                    outputLines.push(`${fullName} (ID: ${player.playerid})`);
+                } else {
+                    outputLines.push(`UNKNOWN ID: ${link.playerid} (Check players.json)`);
+                }
+            }
+
+            // 5. DISPLAY RESULTS
+            outputArea.value = outputLines.join('\n');
+            log.innerHTML += `<br>Generated list for display.`;
+            log.innerHTML += `<br>Players found: ${targetLinks.length}`;
+
+        } catch (err) {
+            log.innerHTML = `<span class='warning'>ERROR: ${err.message}</span>`;
+        }
+    }
+
+    function downloadResults() {
+        const content = document.getElementById('resultOutput').value;
+        if (!content) return;
+
+        // UTF-8 BOM is crucial for names like Rüdiger
+        const BOM = '\uFEFF'; 
+        const blob = new Blob([BOM + content], { type: 'text/plain;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "team_roster_list.txt";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    }
+
+    function readFile(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsText(file);
+        });
+    }
+
+     async function searchPlayer() {
+        const btn = document.getElementById('btnSearch');
+        const nameInput = document.getElementById('playerSearch');
+        const name = nameInput.value.trim();
+        const log = document.getElementById('log');
+        const resultCard = document.getElementById('resultCard');
+        const resName = document.getElementById('resName');
+        const resTeam = document.getElementById('resTeam');
+        const resBadge = document.getElementById('resBadge');
+        const resDob = document.getElementById('resDob');
+
+        if (!name) {
+            log.innerHTML = "Please enter a player name.";
+            return;
+        }
+
+        // 1. UI Loading State
+        btn.disabled = true;
+        btn.innerText = "Searching...";
+        log.innerHTML = `Searching for "${name}" in TheSportsDB...`;
+        resultCard.style.display = 'none';
+
+        try {
+            // 2. FETCH FROM API
+            // TheSportsDB Search Endpoint
+            const apiUrl = `https://www.thesportsdb.com/api/v1/json/3/searchplayers.php?p=${encodeURIComponent(name)}`;
+            
+            const response = await fetch(apiUrl);
+            const data = await response.json();
+
+            // 3. VALIDATION
+            if (!data.player || data.player.length === 0) {
+                throw new Error("Player not found in database.");
+            }
+
+            const player = data.player[0]; // Take first result
+
+            // 4. EXTRACT DATA
+            const playerName = player.strPlayer || "Unknown";
+            const currentTeam = player.strTeam || "Unknown / Free Agent";
+            const dateBorn = player.dateBorn || "Unknown";
+
+            // 5. DISPLAY RESULTS
+            resName.innerText = playerName;
+            resTeam.innerText = currentTeam;
+            resDob.innerText = dateBorn;
+            resultCard.style.display = 'block';
+
+            // LOGIC: Decide Status Badge
+            resBadge.className = "status"; // Reset
+
+            if (currentTeam.toLowerCase().includes("unknown")) {
+                resBadge.innerText = "Retired / Free Agent";
+                resBadge.classList.add("unknown");
+            } else {
+                resBadge.innerText = "Current Team";
+                resBadge.classList.add("current");
+            }
+
+            log.innerHTML = `<span style="color:green">Found!</span> Player: ${playerName}.<br>Team: ${currentTeam}.<br>DOB: ${dateBorn}.`;
+
+        } catch (err) {
+            console.error(err);
+            log.innerHTML = `<span class="error">ERROR: ${err.message}</span>`;
+            log.innerHTML += `<br>Check spelling or network connection.`;
+        } finally {
+            // Restore Button
+            btn.disabled = false;
+            btn.innerText = "Check Current Team";
+        }
+    }
+
+        let teamsData = [];
+
+    document.getElementById('fileInput').addEventListener('change', async function(e) {
+        const file = e.target.files[0];
+        if(file) {
+            try {
+                const text = await readFileAsText(file);
+                teamsData = JSON.parse(text);
+                document.getElementById('log').innerText = `Loaded ${teamsData.length} teams from file.`;
+            } catch(err) {
+                document.getElementById('log').innerText = `Error: ${err.message}`;
+            }
+        }
+    });
+
+    function generateList() {
+        if (teamsData.length === 0) {
+            alert("Please upload teams.json first.");
+            return;
+        }
+
+        const sortType = document.getElementById('sortOrder').value;
+        const log = document.getElementById('log');
+        const tbody = document.getElementById('tableBody');
+        const table = document.getElementById('resultsTable');
+
+        log.innerText = "Processing...";
+
+        // SORT LOGIC
+        if (sortType === 'id_asc') {
+            // 1. Parse ID as Integer to ensure numeric comparison
+            teamsData.sort((a, b) => {
+                const idA = parseInt(a.teamid);
+                const idB = parseInt(b.teamid);
+                return idA - idB; 
+                // NOTE: If ID is null, parseInt returns NaN, which sorts correctly at the end.
+            });
+        } else {
+            // Alphabetic sort by Name
+            teamsData.sort((a, b) => {
+                const nameA = (a.teamname || "").toLowerCase();
+                const nameB = (b.teamname || "").toLowerCase();
+                if(nameA < nameB) return -1;
+                if(nameA > nameB) return 1;
+                return 0;
+            });
+        }
+
+        // RENDER TABLE
+        tbody.innerHTML = "";
+        teamsData.forEach(t => {
+            const tr = document.createElement('tr');
+            
+            // Safety check for undefined IDs
+            const displayId = t.teamid !== undefined ? t.teamid : "Unknown";
+
+            tr.innerHTML = `
+                <td>${displayId}</td>
+                <td>${t.teamname || "Unknown Name"}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        // SHOW RESULTS
+        table.style.display = 'table';
+        log.innerHTML = `<span class='success'>Success!</span> Sorted list generated below.`;
+    }
+
+    function readFileAsText(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsText(file);
+        });
+    }
+</script>
+
+</body>
+</html>
